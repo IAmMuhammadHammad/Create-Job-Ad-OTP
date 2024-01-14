@@ -135,38 +135,32 @@ export const createJobAd = async (req, res) => {
       // const contactNumber = contactNumbers[index];
       const otp = randomatic("0", 6);
 
-      // JobAd document ko update karenge
-      const otpAddToDb = await JobAd.updateOne(
-        { _id: jobAd._id },
-        {
-          $push: {
-            emailOTP: {
-              Email: email,
-              OTP: otp,
+      // Update the JobAd document with the new OTP for the email
+      try {
+        await JobAd.updateOne(
+          { _id: jobAd._id },
+          {
+            $push: {
+              emailOTP: {
+                Email: email,
+                OTP: otp,
+              },
             },
-          },
-        }
-      );
+          }
+        );
 
-      if (!otpAddToDb) {
-        return res.status(400).send({
-          status: "Failed",
-          message: "JobAd not found or OTP not added",
+        // Send OTP via email
+        await sendEmailOTP(email, otp);
+        
+      } catch (error) {
+        console.error("Error in processing OTP for email:", email, error);
+        return res.status(500).send({
+          status: "Error",
+          message: "An error occurred while processing OTPs",
+          error: error,
         });
       }
-      
-      // Send OTP via email
-      const emailResponse = await sendEmailOTP(email, otp);
-      console.log(emailResponse);
-
-      // Send OTP via SMS
-      // const smsResponse = await sendSMSOTP(contactNumber, otp);
-      // console.log(smsResponse);
-      
     };
-
-    // Wait for all OTPs to be generated and saved
-    await Promise.all(otpPromises);
 
     res.status(200).send({
       status: "Success",
@@ -188,21 +182,17 @@ export const createJobAd = async (req, res) => {
 
 export const verifyOtpLink = async (req, res) => {
 
-  // Assuming a function to retrieve jobId from MongoDB...
   async function getJobId(email, otp) {
     try {
-      // Find the JobAd document based on email and OTP
       const jobAd = await JobAd.findOne({
         "emailOTP.Email": email,
         "emailOTP.OTP": otp,
       });
 
       if (jobAd) {
-        // If found, retrieve the jobId from the document
         const jobId = jobAd._id.toString(); // Convert ObjectId to string
         return jobId;
       } else {
-        // If not found, return null or handle accordingly
         return null;
       }
     } catch (error) {
