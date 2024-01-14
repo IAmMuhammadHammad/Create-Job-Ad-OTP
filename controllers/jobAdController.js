@@ -131,10 +131,11 @@ export const createJobAd = async (req, res) => {
     const contactNumbers = extractPhoneNumbers(description);
     // console.log("Contact Numbers:", contactNumbers);
 
-    const otpPromises = emails.map(async (email, index) => {
-      const contactNumber = contactNumbers[index];
+    for (const email of emails) {
+      // const contactNumber = contactNumbers[index];
       const otp = randomatic("0", 6);
 
+      // JobAd document ko update karenge
       const otpAddToDb = await JobAd.updateOne(
         { _id: jobAd._id },
         {
@@ -153,28 +154,23 @@ export const createJobAd = async (req, res) => {
           message: "JobAd not found or OTP not added",
         });
       }
+      
+      // Send OTP via email
+      const emailResponse = await sendEmailOTP(email, otp);
+      console.log(emailResponse);
 
-      try {
-        await jobAd.save();
-
-        // Send OTP via email
-        const emailResponse = await sendEmailOTP(email, otp);
-        console.log(emailResponse);
-
-        // Send OTP via SMS
-        // const smsResponse = await sendSMSOTP(contactNumber, otp);
-        // console.log(smsResponse);
-      } catch (error) {
-        console.log(error);
-      }
-    });
+      // Send OTP via SMS
+      // const smsResponse = await sendSMSOTP(contactNumber, otp);
+      // console.log(smsResponse);
+      
+    };
 
     // Wait for all OTPs to be generated and saved
     await Promise.all(otpPromises);
 
     res.status(200).send({
       status: "Success",
-      message: "Job application received, and OTPs sent successfully!",
+      message: "Job application received, and OTPs sent to your email address",
       data: jobAd,
     });
   } catch (error) {
