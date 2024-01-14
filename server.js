@@ -33,7 +33,7 @@ app.use("/api/auth", authRoutes);
 // >> Server is Running
 // >------------------------
 
-const PORT = process.env.PORT || 8005;
+const PORT = process.env.PORT || 3000;
 const start = async () => {
   try {
     app.listen(PORT, () => {
