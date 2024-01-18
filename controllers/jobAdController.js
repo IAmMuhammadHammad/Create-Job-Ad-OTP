@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import randomatic from "randomatic";
 import twilio from "twilio";
 import JobAd from "../models/jobAdSchema.js";
+import { ObjectId } from "mongodb";
 
 // >------------------------
 // >> Create OTP Link logic
@@ -121,7 +122,7 @@ export const createJobAd = async (req, res) => {
 
     const jobAd = new JobAd(jobAdDetails);
     await jobAd.save();
-    console.log(jobAd);
+    // console.log(jobAd);
 
     //here is all emails in array format
     const emails = extractEmails(description);
@@ -131,40 +132,49 @@ export const createJobAd = async (req, res) => {
     const contactNumbers = extractPhoneNumbers(description);
     // console.log("Contact Numbers:", contactNumbers);
 
-    for (const email of emails) {
-      // const contactNumber = contactNumbers[index];
+    const otpPromises = emails.map(async (email, index) => {
+      const contactNumber = contactNumbers[index];
       const otp = randomatic("0", 6);
 
-      // Update the JobAd document with the new OTP for the email
-      try {
-        await JobAd.updateOne(
-          { _id: jobAd._id },
-          {
-            $push: {
-              emailOTP: {
-                Email: email,
-                OTP: otp,
-              },
+      const otpAddToDb = await JobAd.updateOne(
+        { _id: jobAd._id },
+        {
+          $push: {
+            emailOTP: {
+              Email: email,
+              OTP: otp,
+              createdAt: new Date(),
             },
-          }
-        );
+          },
+        }
+      );
 
-        // Send OTP via email
-        await sendEmailOTP(email, otp);
-        
-      } catch (error) {
-        console.error("Error in processing OTP for email:", email, error);
-        return res.status(500).send({
-          status: "Error",
-          message: "An error occurred while processing OTPs",
-          error: error,
+      if (!otpAddToDb) {
+        return res.status(400).send({
+          status: "Failed",
+          message: "JobAd not found or OTP not added",
         });
       }
-    };
+
+      try {
+        // Send OTP via email
+        const emailResponse = await sendEmailOTP(email, otp);
+        console.log(emailResponse);
+
+        // Send OTP via SMS
+        // const smsResponse = await sendSMSOTP(contactNumber, otp);
+        // console.log(smsResponse);
+      } catch (error) {
+        console.log(error);
+      }
+    });
+
+    // Wait for all OTPs to be generated and saved
+    await Promise.all(otpPromises);
 
     res.status(200).send({
       status: "Success",
-      message: "Job application received, and OTPs sent to your email address",
+      message: "Job application received, and OTPs sent successfully!",
       data: jobAd,
     });
   } catch (error) {
@@ -181,43 +191,70 @@ export const createJobAd = async (req, res) => {
 // >------------------------
 
 export const verifyOtpLink = async (req, res) => {
-
-  async function getJobId(email, otp) {
-    try {
-      const jobAd = await JobAd.findOne({
-        "emailOTP.Email": email,
-        "emailOTP.OTP": otp,
-      });
-
-      if (jobAd) {
-        const jobId = jobAd._id.toString(); // Convert ObjectId to string
-        return jobId;
-      } else {
-        return null;
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      throw error;
-    }
-  }
-
   try {
     const { email, otp } = req.body;
-    const jobId = await getJobId(email, otp);
-    if (jobId) {
-      // If jobId is found, return it
-      res.status(200).send({
-        status: "Success",
-        message: "OTP verified successfully",
-        data: jobId,
-      });
-    } else {
-      // If jobId is not found, return an error
-      res.status(400).send({
-        status: "Error",
-        message: "OTP isn't Correct",
+
+    if (!email || !otp) {
+      return res.status(400).send({
+        status: "Failed",
+        message: "Email and OTP are required for verification.",
       });
     }
+
+    const jobAd = await JobAd.findOne({
+      "emailOTP.Email": email,
+      "emailOTP.OTP": otp,
+    });
+    // console.log(jobAd);
+
+    if (!jobAd) {
+      return res.status(401).send({
+        status: "Failed",
+        message: "Invalid OTP or email address.",
+      });
+    }
+
+    // console.log("Searching for:", email, otp);
+    const matchingOTP = jobAd.emailOTP.find(
+      (entry) => entry.Email === email && entry.OTP === Number(otp)
+    );
+    // console.log("Matching OTP:", matchingOTP);
+    // console.log("emailOTP array:", jobAd.emailOTP);
+
+    if (!matchingOTP) {
+      return res.status(401).send({
+        status: "Failed",
+        message: "Invalid OTP or email address.",
+      });
+    }
+
+    if (matchingOTP.isUsed) {
+      return res.status(401).send({
+        status: "Failed",
+        message: "OTP has already been used.",
+      });
+    }
+
+    const now = new Date();
+    const createdAt = new Date(matchingOTP.createdAt);
+    const timeDifference = now - createdAt;
+
+    // Check if OTP has expired (5 minutes)
+    if (timeDifference > 5 * 60 * 1000) {
+      return res.status(401).send({
+        status: "Failed",
+        message: "OTP has expired.",
+      });
+    }
+
+    // Mark the OTP as used
+    matchingOTP.isUsed = true;
+    await jobAd.save();
+
+    res.status(200).send({
+      status: "Success",
+      message: "OTP verification successful!",
+    });
   } catch (error) {
     console.error("Error:", error);
     res.status(500).send({

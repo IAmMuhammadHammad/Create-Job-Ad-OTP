@@ -60,8 +60,10 @@ const jobAdSchema = mongoose.Schema(
     },
     emailOTP: [
       {
-        Email: String,
-        OTP: Number,
+        Email: { type: String, required: true },
+        OTP: { type: Number, required: true },
+        isUsed: { type: Boolean, default: false },
+        createdAt: { type: Date, default: Date.now },
       },
     ],
   },
