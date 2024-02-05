@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import randomatic from "randomatic";
 import twilio from "twilio";
 import JobAd from "../models/jobAdSchema.js";
 import { ObjectId } from "mongodb";
@@ -134,7 +133,12 @@ export const createJobAd = async (req, res) => {
 
     const otpPromises = emails.map(async (email, index) => {
       const contactNumber = contactNumbers[index];
-      const otp = randomatic("0", 6);
+      
+      // Generate OTP Code
+      const min = 100000;
+      const max = 999999;
+      const generateRandomCode =
+        Math.floor(Math.random() * (max - min + 1)) + min;
 
       const otpAddToDb = await JobAd.updateOne(
         { _id: jobAd._id },
@@ -142,7 +146,7 @@ export const createJobAd = async (req, res) => {
           $push: {
             emailOTP: {
               Email: email,
-              OTP: otp,
+              OTP: generateRandomCode,
               createdAt: new Date(),
             },
           },
@@ -158,11 +162,11 @@ export const createJobAd = async (req, res) => {
 
       try {
         // Send OTP via email
-        const emailResponse = await sendEmailOTP(email, otp);
+        const emailResponse = await sendEmailOTP(email, generateRandomCode);
         console.log(emailResponse);
 
         // Send OTP via SMS
-        // const smsResponse = await sendSMSOTP(contactNumber, otp);
+        // const smsResponse = await sendSMSOTP(contactNumber, generateRandomCode);
         // console.log(smsResponse);
       } catch (error) {
         console.log(error);
@@ -174,9 +178,9 @@ export const createJobAd = async (req, res) => {
 
     res.status(200).send({
       status: "Success",
-      message: "Job application received, and OTPs sent successfully!",
-      data: jobAd,
+      message: "Job application received, and OTPs sent to your email addresses which you have provided",
     });
+
   } catch (error) {
     console.error("Error:", error);
     res.status(500).send({
